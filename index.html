@@ -242,6 +242,7 @@ const PARAMS = [
   { g: 'Magnete', id: 'mag_clear', label: 'Spiel Magnet/Schlitz', def: 0.2, unit: 'mm', step: 0.05, min: 0, hint: 'gesamt, auf Durchmesser und Dicke' },
   { g: 'Magnete', id: 'mag_out', label: 'Außenhaut vor dem Magnet', def: 0.8, unit: 'mm', step: 0.05, min: 0.3, hint: '2 Linien mit 0,4er Düse; dünner haftet stärker, kann aber Löcher geben' },
   { g: 'Magnete', id: 'mag_back', label: 'Wand hinter dem Magnet', def: 0.8, unit: 'mm', step: 0.05, min: 0.3, hint: 'reicht die Wand nicht, kommt innen ein Polster dazu' },
+  { g: 'Magnete', id: 'mag_pad', label: 'Innen-Polster statt dickerer Wand', def: false, type: 'bool' },
   { g: 'Magnete', id: 'mag_z', label: 'Unterer Magnet über dem Boden', def: 1, unit: 'mm', step: 0.2, min: 0.4, hint: 'Unterkante des Schlitzes' },
   { g: 'Magnete', id: 'mag_cover', label: 'Material über dem oberen Magnet', def: 1, unit: 'mm', step: 0.2, min: 0.4, hint: 'bis zur Oberkante bzw. zum Falz' },
   { g: 'Key', id: 'key_short', label: 'Key kürzer als Tasche', def: 0.3, unit: 'mm', step: 0.1, min: 0 },
@@ -382,9 +383,15 @@ function readGlobals() {
 function setGlobals(vals) { for (const p of PARAMS) if (p.g !== 'box') writeField(p, vals[p.id] ?? p.def); }
 
 // Innenmaße -> Rasterzellen und Gesamthöhe
-function fromInner(req, lid) {
-  const r = G.raster, up = (v) => Math.max(1, Math.ceil(v / r - 1e-9));
-  return { cw: up(req.w + 2 * G.gap + 2 * G.wall), cd: up(req.d + 2 * G.gap + 2 * G.wall),
+// Wandstärke einer Box: mit Magneten (ohne Polster) so dick, dass Außenhaut + Schlitz + Rückwand hineinpassen
+const magNeed = () => G.mag_out + G.mag_t + G.mag_clear + G.mag_back;
+function boxWall(b) {
+  const hasMag = b && b.mag && SIDES.some((k) => b.mag[k]);
+  return hasMag && !G.mag_pad ? Math.max(G.wall, magNeed()) : G.wall;
+}
+function fromInner(req, lid, b) {
+  const r = G.raster, up = (v) => Math.max(1, Math.ceil(v / r - 1e-9)), w = boxWall(b);
+  return { cw: up(req.w + 2 * G.gap + 2 * w), cd: up(req.d + 2 * G.gap + 2 * w),
     h: up(req.h + G.floor_t + (lid ? G.lid_top_t : 0)) * r };
 }
 
@@ -411,7 +418,7 @@ function fieldsToBox() {
   }
   if (b.lid) b.bh = v.box_h;
   let s;
-  if (dimMode === 'inner') { b.req = { w: v.size_w, d: v.size_d, h: v.size_h }; s = fromInner(b.req, b.lid); }
+  if (dimMode === 'inner') { b.req = { w: v.size_w, d: v.size_d, h: v.size_h }; s = fromInner(b.req, b.lid, b); }
   else {
     const r = G.raster, c = (x) => Math.max(1, Math.round(x / r));
     s = { cw: c(v.size_w), cd: c(v.size_d), h: c(v.size_h) * r }; b.req = null;
@@ -434,6 +441,9 @@ function boxToFields() {
 
 function boxParams(b) {
   const P = { ...G, box_w: b.cw * G.raster, box_d: b.cd * G.raster, total_h: effH(b), box_h: b.bh, lid_on: b.lid, sides: b.sides, mag: b.mag || noMag(), magOn: b.magOn || fullMagOn(), req: b.req };
+  // Falz und Deckel richten sich immer nach der Grundwand: so passt jeder Deckel auf jede gleich große Box
+  P.wall_base = G.wall;
+  P.wall = boxWall(b);
   P.box_h_req = P.box_h;
   if (!P.lid_on) P.box_h = P.total_h;
   else {
@@ -455,11 +465,13 @@ function derive(P) {
   D.lid_above = P.total_h - P.box_h;
   D.lid_h = D.lid_above + P.lip_h;
   D.clear_h = P.lid_on ? P.total_h - P.floor_t - P.lid_top_t : P.box_h - P.floor_t;
-  D.r_lip = P.r_vert - (P.wall - P.lip_t);
+  const wb = P.wall_base ?? P.wall;
+  D.r_lip = P.r_vert - (wb - P.lip_t);
   D.rest_wall = P.wall - P.bt_depth;
   D.inner_w = P.box_w - 2 * P.gap - 2 * P.wall;
   D.inner_d = P.box_d - 2 * P.gap - 2 * P.wall;
-  D.lid_wall = P.wall - P.lip_t - P.lid_clear;
+  D.lid_wall = wb - P.lip_t - P.lid_clear;
+  D.lip_thick = P.wall - (wb - P.lip_t);   // Falz innen bis zur (ggf. dickeren) Wand
   D.cw = Math.round(P.box_w / P.raster); D.cd = Math.round(P.box_d / P.raster);
   const s = P.sides || { s: D.cw, n: D.cw, w: D.cd, e: D.cd };
   D.cells = {}; D.pk = {};
@@ -635,7 +647,7 @@ function buildBox(P, D) {
   const zl = P.lid_on ? H - P.lip_h : H;
   let body = hull(at(R(g + cf, rv - cf), 0), at(R(g, rv), cf), at(R(g, rv), zl));
   if (P.lid_on) {
-    const a = g + wall - P.lip_t, rl = D.r_lip, lc = P.lip_cham;
+    const a = g + (P.wall_base ?? wall) - P.lip_t, rl = D.r_lip, lc = P.lip_cham;
     const lip = hull(at(R(a, rl), zl - 0.5), at(R(a, rl), H - lc), at(R(a + lc, rl - lc), H));
     body = tk(M.union(body, lip));
   }
@@ -767,10 +779,10 @@ function buildAll() {
   try {
     for (const { b, i, P, D } of items) {
       const sk = SIDES.map((k) => D.cells[k].join('.') + 'm' + D.magPos[k].map((p) => p.c + '@' + p.z + '~' + p.du).join('.')).join('/') + '|' + D.magZ.join(',');
-      const bm = cached(`${gk}|box|${P.box_w}|${P.box_d}|${P.box_h}|${P.lid_on}|${sk}`, () => meshOf(buildBox(P, D)));
+      const bm = cached(`${gk}|box|${P.box_w}|${P.box_d}|${P.box_h}|${P.lid_on}|${P.wall}|${sk}`, () => meshOf(buildBox(P, D)));
       parts.push({ name: `Box ${i + 1}`, kind: 'box', box: i, mesh: bm, place: [b.x * r, b.y * r, 0], print: 'asis' });
       if (P.lid_on) {
-        const lm = cached(`${gk}|lid|${P.box_w}|${P.box_d}|${D.lid_h}`, () => meshOf(buildLid(P, D)));
+        const lm = cached(`${gk}|lid|${P.box_w}|${P.box_d}|${D.lid_h}`, () => meshOf(buildLid({ ...P, wall: P.wall_base }, D)));
         parts.push({ name: `Deckel ${i + 1}`, kind: 'lid', box: i, mesh: lm, place: [b.x * r, b.y * r, P.box_h - P.lip_h], print: 'flip' });
       }
     }
@@ -1270,6 +1282,8 @@ function report() {
     const mi = magItems[0].D.mag_inner;
     if (mi < 0.8 - 1e-9) m.push(['warn', `Hinter den Magneten bleiben nur ${nf(mi)} mm Wand, weniger als 2 Linien mit 0,4er Düse.`]);
     if (G.mag_out < 0.8 - 1e-9) m.push(['warn', `Außenhaut vor den Magneten nur ${nf(G.mag_out)} mm. Unter 2 Linien lassen manche Slicer dort Lücken.`]);
+    const thick = magItems.filter((x) => x.P.wall > G.wall + 1e-9);
+    if (thick.length) m.push(['ok', `${boxes.length > 1 ? `Box ${thick.map((x) => x.i + 1).join(', ')}: ` : ''}Wand ${nf(thick[0].P.wall)} mm statt ${nf(G.wall)} mm, damit vor und hinter den Magneten je ${nf(G.mag_out)} / ${nf(G.mag_back)} mm Material bleiben. Innen wird es dadurch etwas enger. Alternativ unter Erweitert → Magnete das Innen-Polster einschalten.`]);
     if (magItems[0].D.pad > 0.01) m.push(['ok', `An jeder Magnetstelle ist die Wand innen um ${nf(magItems[0].D.pad)} mm verdickt (Polster), damit vor und hinter dem Magneten je ${nf(G.mag_out)} / ${nf(G.mag_back)} mm Material bleiben.`]);
     if (magItems.some((x) => x.D.magZ.length < 2)) m.push(['warn', `Box ${magItems.filter((x) => x.D.magZ.length < 2).map((x) => x.i + 1).join(', ')}: zu niedrig für die oberen Magnete, dort sitzen nur die unteren.`]);
   }
@@ -1599,7 +1613,7 @@ document.getElementById('form').addEventListener('input', (ev) => {
   else {
     readGlobals();
     // Innenmaße bleiben fest, wenn sich Wand, Spalt oder Raster ändern
-    if (dimMode === 'inner') boxes.forEach((b, i) => { if (b.req) { const s = fromInner(b.req, b.lid); if (b.lid) b.h = s.h; else b.bh = s.h; const keep = sel; sel = i; setSize(i, s.cw, s.cd); sel = keep; } });
+    if (dimMode === 'inner') boxes.forEach((b, i) => { if (b.req) { const s = fromInner(b.req, b.lid, b); if (b.lid) b.h = s.h; else b.bh = s.h; const keep = sel; sel = i; setSize(i, s.cw, s.cd); sel = keep; } });
   }
   syncUI(); schedule();
 });
@@ -1627,6 +1641,9 @@ document.getElementById('sides').addEventListener('click', (e) => {
   const b = boxes[sel], k = c.dataset.mag;
   b.mag[k] = !b.mag[k];
   if (!b.mag[k] && !sideCount(b, k)) b.sides[k] = sideMax(b, k);
+  // Wandstärke kann sich ändern: Innenmaße (falls angegeben) halten
+  if (dimMode === 'inner' && b.req) { const s = fromInner(b.req, b.lid, b); if (b.lid) b.h = s.h; else b.bh = s.h; setSize(sel, s.cw, s.cd); }
+  boxToFields();
   updateLayoutUI(); schedule();
 });
 document.getElementById('delBox').addEventListener('click', removeBox);
@@ -1660,7 +1677,7 @@ initDownloads();
     wasm.setup();
     M = wasm.Manifold; CS = wasm.CrossSection;
     // fuer Tests in der Browser-Konsole
-    window.__bowtie = { M, derive, boxParams, buildBox, buildKey, model3mf, stl, connections, selectBox, dock, autoSides,
+    window.__bowtie = { M, derive, boxParams, buildBox, buildLid, buildKey, model3mf, stl, connections, selectBox, dock, autoSides,
       get boxes() { return boxes; }, get sel() { return sel; }, get last() { return lastBuild; }, get G() { return G; }, rebuild,
       pickAt(x, y) {
         const ev = { clientX: x, clientY: y };
