@@ -61,6 +61,10 @@ header p { margin: 0; color: var(--muted); }
 .dock { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .dock .chip { padding: 6px 4px; font-family: var(--f-body); }
 .tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.sidegrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.sidef { display: grid; gap: 4px; font-size: 13px; min-width: 0; }
+.sidef small { color: var(--muted); font: 11px var(--f-mono); }
+@media (max-width: 400px) { .sidegrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 details { border-top: 1px solid var(--line); }
 details > summary { padding: 12px 16px; cursor: pointer; list-style: none; display: flex; justify-content: space-between; }
 details > summary::after { content: "+"; font: 14px var(--f-mono); }
@@ -137,12 +141,12 @@ details .sec { border-top: 0; padding-top: 0; }
             <button type="button" class="chip" data-mode="inner">Innen</button>
           </div></div>
         <div id="boxfields"></div>
-        <div class="block"><span>Taschen an den Seiten<span class="hint">Ausgeschaltet bleibt die Seite glatt, z.B. als Abschluss am Rand.</span></span>
-          <div class="chips" id="sides" role="group" aria-label="Taschen an den Seiten">
-            <button type="button" class="chip" data-side="s">Vorne</button>
-            <button type="button" class="chip" data-side="n">Hinten</button>
-            <button type="button" class="chip" data-side="w">Links</button>
-            <button type="button" class="chip" data-side="e">Rechts</button>
+        <div class="block"><span>Taschen pro Seite<span class="hint">0 = glatte Seite, z.B. als Abschluss am Rand. Bei weniger als allen bleiben zuerst die Eckzellen frei, der Rest wird gleichmäßig verteilt.</span></span>
+          <div class="sidegrid" id="sides">
+            <label class="sidef" for="pk_s">Vorne <small id="pkmax_s"></small><div class="num"><input type="number" id="pk_s" data-side="s" min="0" step="1" inputmode="numeric"></div></label>
+            <label class="sidef" for="pk_n">Hinten <small id="pkmax_n"></small><div class="num"><input type="number" id="pk_n" data-side="n" min="0" step="1" inputmode="numeric"></div></label>
+            <label class="sidef" for="pk_w">Links <small id="pkmax_w"></small><div class="num"><input type="number" id="pk_w" data-side="w" min="0" step="1" inputmode="numeric"></div></label>
+            <label class="sidef" for="pk_e">Rechts <small id="pkmax_e"></small><div class="num"><input type="number" id="pk_e" data-side="e" min="0" step="1" inputmode="numeric"></div></label>
           </div></div>
       </div>
       <div class="sec">
@@ -204,7 +208,6 @@ const PARAMS = [
   { g: 'box', id: 'lid_on', label: 'Deckel', def: true, type: 'bool' },
   { g: 'box', id: 'box_h', label: 'davon Unterteil', def: 60, unit: 'mm', step: 5, min: 10, hint: 'Außenhöhe der Box, der Rest ist Deckel' },
 
-  { g: 'basic', id: 'corner', label: 'Taschen auch in den Eckzellen', def: true, type: 'bool' },
   { g: 'basic', id: 'key_extra', label: 'Reserve-Keys', def: 2, unit: 'Stk', step: 1, min: 0, int: true, hint: 'zusätzlich zu den Keys zwischen angedockten Boxen' },
 
   { g: 'Passung', id: 'tol', label: 'Spiel Key/Tasche', def: 0.10, unit: 'mm', step: 0.01, hint: 'pro Flanke, senkrecht zur Flanke' },
@@ -255,11 +258,37 @@ let sel = 0;
 let dimMode = 'outer';
 let notes = [];             // einmalige Hinweise für die nächste Auswertung
 
-const allSides = () => ({ s: true, n: true, w: true, e: true });
+// Taschen pro Seite: Anzahl 0 … Seitenlänge in Zellen (vorne/hinten = Breite, links/rechts = Tiefe)
+const sideMax = (b, k) => (k === 's' || k === 'n' ? b.cw : b.cd);
+const allSides = (b) => ({ s: b.cw, n: b.cw, w: b.cd, e: b.cd });
+const sideCount = (b, k) => Math.max(0, Math.min(sideMax(b, k), Math.round(+b.sides[k] || 0)));
+
+// Welche Zellen einer Seite (0 … m-1) eine Tasche bekommen: alle, sonst Eckzellen zuerst frei,
+// die Taschen gleichmäßig verteilt
+function pocketCells(m, n) {
+  n = Math.max(0, Math.min(m, Math.round(n)));
+  const seq = (s, k) => Array.from({ length: k }, (_, i) => s + i);
+  if (n === m) return seq(0, m);
+  if (n === 0) return [];
+  if (n === 1) return [Math.floor((m - 1) / 2)];
+  if (n > m - 2) return seq(Math.floor((m - n) / 2), n);
+  return Array.from({ length: n }, (_, i) => 1 + Math.round((i * (m - 3)) / (n - 1)));
+}
+
+// Beim Ändern der Größe: "alle" bleibt "alle", "ohne Ecken" bleibt "ohne Ecken"
+function resizeSides(b, cw, cd) {
+  for (const k of SIDES) {
+    const old = sideMax(b, k), nw = k === 's' || k === 'n' ? cw : cd, c = sideCount(b, k);
+    b.sides[k] = c >= old ? nw : c === old - 2 && old > 2 ? Math.max(0, nw - 2) : Math.min(c, nw);
+  }
+}
+
 function defaultBox() {
   const r = BYID.raster.def;
-  return { x: 0, y: 0, cw: Math.round(BYID.size_w.def / r), cd: Math.round(BYID.size_d.def / r),
-    h: BYID.size_h.def, bh: BYID.box_h.def, lid: BYID.lid_on.def, sides: allSides(), req: null };
+  const b = { x: 0, y: 0, cw: Math.round(BYID.size_w.def / r), cd: Math.round(BYID.size_d.def / r),
+    h: BYID.size_h.def, bh: BYID.box_h.def, lid: BYID.lid_on.def, req: null };
+  b.sides = allSides(b);
+  return b;
 }
 const cloneBox = (b) => ({ ...b, sides: { ...b.sides }, req: b.req ? { ...b.req } : null });
 
@@ -274,7 +303,7 @@ function touchSide(a, b) {
 }
 function dockRect(i, side) {
   const b = boxes[i]; if (!b) return null;
-  const n = cloneBox(b); n.sides = allSides();
+  const n = cloneBox(b); n.sides = allSides(n);
   if (side === 'e') n.x = b.x + b.cw; else if (side === 'w') n.x = b.x - b.cw;
   else if (side === 'n') n.y = b.y + b.cd; else n.y = b.y - b.cd;
   return free(n, -1) ? n : null;
@@ -340,6 +369,7 @@ function setSize(i, cw, cd) {
   if (cw <= w) w = cw; else while (w < cw && free({ ...b, cw: w + 1, cd: d }, i)) w++;
   if (cd <= d) d = cd; else while (d < cd && free({ ...b, cw: w, cd: d + 1 }, i)) d++;
   if (w !== cw || d !== cd) notes.push(['warn', `Box ${i + 1} stößt an eine Nachbarbox und wurde auf ${nf(w * G.raster)} × ${nf(d * G.raster)} mm begrenzt.`]);
+  resizeSides(b, w, d);
   b.cw = w; b.cd = d;
 }
 
@@ -394,13 +424,16 @@ function derive(P) {
   D.rest_wall = P.wall - P.bt_depth;
   D.inner_w = P.box_w - 2 * P.gap - 2 * P.wall;
   D.inner_d = P.box_d - 2 * P.gap - 2 * P.wall;
-  D.skip = P.corner ? 0 : 1;
-  D.nx = Math.max(0, Math.floor(P.box_w / P.raster + 1e-9) - 2 * D.skip);
-  D.ny = Math.max(0, Math.floor(P.box_d / P.raster + 1e-9) - 2 * D.skip);
   D.lid_wall = P.wall - P.lip_t - P.lid_clear;
-  const s = P.sides || allSides();
-  D.pk = { s: s.s ? D.nx : 0, n: s.n ? D.nx : 0, w: s.w ? D.ny : 0, e: s.e ? D.ny : 0 };
+  D.cw = Math.round(P.box_w / P.raster); D.cd = Math.round(P.box_d / P.raster);
+  const s = P.sides || { s: D.cw, n: D.cw, w: D.cd, e: D.cd };
+  D.cells = {}; D.pk = {};
+  for (const k of SIDES) { D.cells[k] = pocketCells(k === 's' || k === 'n' ? D.cw : D.cd, +s[k] || 0); D.pk[k] = D.cells[k].length; }
   D.pockets = D.pk.s + D.pk.n + D.pk.w + D.pk.e;
+  // Ecken, an denen auf beiden Seiten eine Tasche sitzt (dort bleibt nur ein dünner Steg)
+  const has = (k, c) => D.cells[k].includes(c);
+  D.corners = [has('s', 0) && has('w', 0), has('s', D.cw - 1) && has('e', 0),
+    has('n', 0) && has('w', D.cd - 1), has('n', D.cw - 1) && has('e', D.cd - 1)].filter(Boolean).length;
   return D;
 }
 
@@ -413,28 +446,20 @@ function keyDims(P, D, t) {
 
 // Keys zwischen angedockten Boxen: dort, wo sich zwei Taschen gegenüberliegen
 function connections(items) {
-  const r = G.raster, skip = G.corner ? 0 : 1, keys = [], pairs = [];
+  const r = G.raster, keys = [], pairs = [];
   for (let ia = 0; ia < items.length; ia++) for (let ib = ia + 1; ib < items.length; ib++) {
-    const a = items[ia].b, b = items[ib].b, side = touchSide(a, b);
+    const A = items[ia], B = items[ib], a = A.b, b = B.b, side = touchSide(a, b);
     if (!side) continue;
     const opp = { e: 'w', w: 'e', n: 's', s: 'n' }[side];
     const pair = { a: ia, b: ib, keys: 0, sideA: side };
-    if (a.sides[side] && b.sides[opp]) {
-      if (side === 'e' || side === 'w') {
-        const X = side === 'e' ? b.x : a.x;
-        const lo = Math.max(a.y, b.y) + skip, hi = Math.min(a.y + a.cd, b.y + b.cd);
-        for (let j = lo; j < hi; j++) {
-          if (j >= a.y + a.cd - skip || j >= b.y + b.cd - skip || j < a.y + skip || j < b.y + skip) continue;
-          keys.push({ x: X * r, y: (j + 0.5) * r, rot: 0 }); pair.keys++;
-        }
-      } else {
-        const Y = side === 'n' ? b.y : a.y;
-        const lo = Math.max(a.x, b.x), hi = Math.min(a.x + a.cw, b.x + b.cw);
-        for (let i = lo; i < hi; i++) {
-          if (i >= a.x + a.cw - skip || i >= b.x + b.cw - skip || i < a.x + skip || i < b.x + skip) continue;
-          keys.push({ x: (i + 0.5) * r, y: Y * r, rot: Math.PI / 2 }); pair.keys++;
-        }
-      }
+    const vert = side === 'e' || side === 'w';            // Grenze verläuft entlang y
+    const cb = new Set(B.D.cells[opp].map((c) => (vert ? b.y : b.x) + c));
+    for (const c of A.D.cells[side]) {
+      const j = (vert ? a.y : a.x) + c;
+      if (!cb.has(j)) continue;
+      if (vert) keys.push({ x: (side === 'e' ? b.x : a.x) * r, y: (j + 0.5) * r, rot: 0 });
+      else keys.push({ x: (j + 0.5) * r, y: (side === 'n' ? b.y : a.y) * r, rot: Math.PI / 2 });
+      pair.keys++;
     }
     pairs.push(pair);
   }
@@ -535,17 +560,11 @@ function buildBox(P, D) {
     body = tk(M.union(body, lip));
   }
   body = sub(body, cavity(R, g + wall, P.r_in_vert, P.r_floor, P.floor_t, H + 1, seg));
-  const s = P.sides, maps = [];
-  for (let i = 0; i < D.nx; i++) {
-    const cx = P.raster * (D.skip + 0.5 + i);
-    if (s.s) maps.push((u, v) => [cx + u, g + v]);
-    if (s.n) maps.push((u, v) => [cx + u, Dp - g - v]);
-  }
-  for (let j = 0; j < D.ny; j++) {
-    const cy = P.raster * (D.skip + 0.5 + j);
-    if (s.w) maps.push((u, v) => [g + v, cy + u]);
-    if (s.e) maps.push((u, v) => [W - g - v, cy + u]);
-  }
+  const maps = [], c = (i) => P.raster * (i + 0.5);
+  for (const i of D.cells.s) maps.push((u, v) => [c(i) + u, g + v]);
+  for (const i of D.cells.n) maps.push((u, v) => [c(i) + u, Dp - g - v]);
+  for (const j of D.cells.w) maps.push((u, v) => [g + v, c(j) + u]);
+  for (const j of D.cells.e) maps.push((u, v) => [W - g - v, c(j) + u]);
   return maps.length ? sub(body, uni(pocketCutters(P, maps))) : body;
 }
 
@@ -636,7 +655,7 @@ function buildAll() {
   const { keys, pairs } = connections(items);
   try {
     for (const { b, i, P, D } of items) {
-      const sk = SIDES.map((k) => (P.sides[k] ? 1 : 0)).join('');
+      const sk = SIDES.map((k) => D.cells[k].join('.')).join('/');
       const bm = cached(`${gk}|box|${P.box_w}|${P.box_d}|${P.box_h}|${P.lid_on}|${sk}`, () => meshOf(buildBox(P, D)));
       parts.push({ name: `Box ${i + 1}`, kind: 'box', box: i, mesh: bm, place: [b.x * r, b.y * r, 0], print: 'asis' });
       if (P.lid_on) {
@@ -941,6 +960,7 @@ function initPointer() {
     if (d.type === 'add') { if (!moved) dock(d.side); return; }
     const b = boxes[sel], nb = d.nb;
     if (!nb || (nb.x === b.x && nb.y === b.y && nb.cw === b.cw && nb.cd === b.cd && nb.h === b.h)) { showParts(); return; }
+    resizeSides(b, nb.cw, nb.cd);
     Object.assign(b, { x: nb.x, y: nb.y, cw: nb.cw, cd: nb.cd, h: nb.h });
     if (d.type !== 'move') b.req = null;
     boxToFields(); updateLayoutUI(); rebuild();
@@ -958,7 +978,8 @@ function selectBox(i) {
 function dock(side) {
   const n = dockRect(sel, side);
   if (!n) return;
-  boxes[sel].sides[side] = true;   // angedockte Seite bekommt Taschen, damit Keys passen
+  const s0 = boxes[sel];            // angedockte Seite bekommt Taschen, damit Keys passen
+  if (!sideCount(s0, side)) s0.sides[side] = sideMax(s0, side);
   boxes.push(n); sel = boxes.length - 1; fitNext = true;
   boxToFields(); syncUI(); updateLayoutUI(); rebuild();
 }
@@ -968,7 +989,10 @@ function removeBox() {
   boxToFields(); syncUI(); updateLayoutUI(); rebuild();
 }
 function autoSides() {
-  for (const b of boxes) for (const s of SIDES) b.sides[s] = boxes.some((o) => o !== b && touchSide(b, o) === s);
+  for (const b of boxes) for (const s of SIDES) {
+    const docked = boxes.some((o) => o !== b && touchSide(b, o) === s);
+    b.sides[s] = !docked ? 0 : sideCount(b, s) || sideMax(b, s);
+  }
   updateLayoutUI(); rebuild();
 }
 function updateLayoutUI() {
@@ -979,8 +1003,16 @@ function updateLayoutUI() {
   document.getElementById('delBox').disabled = boxes.length < 2;
   document.getElementById('autoSides').disabled = boxes.length < 2;
   document.getElementById('boxtitle').textContent = boxes.length > 1 ? `Box ${sel + 1} von ${boxes.length}` : 'Box';
+  syncSideFields();
+}
+function syncSideFields() {
   const b = boxes[sel];
-  for (const el of document.querySelectorAll('#sides .chip')) el.setAttribute('aria-pressed', String(!!b.sides[el.dataset.side]));
+  for (const k of SIDES) {
+    const el = document.getElementById('pk_' + k), mx = sideMax(b, k);
+    el.max = mx;
+    if (document.activeElement !== el) el.value = sideCount(b, k);
+    document.getElementById('pkmax_' + k).textContent = `von ${mx}`;
+  }
 }
 
 // ---------------------------------------------------------------- Kennwerte & Hinweise
@@ -995,9 +1027,7 @@ function report() {
   rows.push(['Außenmaß', `${nf(P.box_w - 2 * P.gap)} × ${nf(P.box_d - 2 * P.gap)} × ${nf(P.total_h)} mm`]);
   rows.push(['Innenmaß', `${nf(D.inner_w)} × ${nf(D.inner_d)} × ${nf(D.clear_h)} mm`]);
   if (P.lid_on) rows.push(['Unterteil / Deckel', `${nf(P.box_h)} / ${nf(D.lid_above)} mm (+${nf(P.lip_h)} Falz)`]);
-  const off = SIDES.filter((s) => !P.sides[s]).map((s) => SIDE_NAME[s]);
-  rows.push(['Taschen', `${D.pockets}`]);
-  if (off.length) rows.push(['Glatte Seiten', off.join(', ')]);
+  rows.push(['Taschen', `${D.pockets} (v ${D.pk.s} · h ${D.pk.n} · l ${D.pk.w} · r ${D.pk.e})`]);
   rows.push(['Restwand hinter Tasche', `${nf(D.rest_wall)} mm`]);
   if (P.lid_on) rows.push(['Deckelwand am Falz', `${nf(D.lid_wall)} mm`]);
   const vol = (pred) => parts.filter(pred).reduce((s, p) => s + p.mesh.vol, 0);
@@ -1033,8 +1063,8 @@ function report() {
   if (items.some((x) => x.P.lid_on && x.D.pockets > 0 && x.P.bt_height > x.P.box_h - x.P.lip_h)) m.push(['bad', 'Taschen reichen bis in den Falz. Taschen kürzer oder Unterteil höher machen.']);
   if (2 * k.hn < 2) m.push(['warn', `Key-Hals nur ${nf(2 * k.hn)} mm breit, bricht leicht.`]);
   if (P.bt_wide <= P.bt_neck) m.push(['bad', 'Breite innen muss größer als die Halsbreite sein, sonst hält der Key nicht.']);
-  const cornerPair = (s) => (s.s || s.n) && (s.w || s.e);
-  if (P.corner && items.some((x) => cornerPair(x.P.sides))) m.push(['warn', 'Ecktaschen: an den Ecken bleiben ca. 0,8 mm Steg zwischen zwei Taschen. Bei Bruch Ecktaschen ausschalten.']);
+  const cb = items.filter((x) => x.D.corners > 0).map((x) => x.i + 1);
+  if (cb.length) m.push(['warn', `${boxes.length > 1 ? `Box ${cb.join(', ')}: a` : 'A'}n Ecken mit Taschen auf beiden Seiten bleibt nur ca. 0,8 mm Steg. Bricht dort etwas, je Seite 2 Taschen weniger eintragen, dann bleiben die Eckzellen frei.`]);
   if (items.some((x) => Math.max(x.P.box_w, x.P.box_d) - 2 * x.P.gap > 256)) m.push(['warn', 'Mindestens eine Box ist größer als 256 mm und passt nicht auf ein 256er Druckbett.']);
   document.getElementById('msgs').innerHTML = m.map(([c, t]) => `<div class="msg ${c}">${t}</div>`).join('');
 }
@@ -1300,7 +1330,17 @@ renderForm();
   if (!st) { try { old = JSON.parse(localStorage.getItem(OLD_KEY) || 'null'); } catch (e) { old = null; } }
   if (st && Array.isArray(st.boxes) && st.boxes.length) {
     setGlobals(st.g || {}); readGlobals();
-    boxes = st.boxes.map((b) => ({ ...defaultBox(), ...b, sides: { ...allSides(), ...(b.sides || {}) } }));
+    // frühere Fassung: Seiten an/aus plus globale Einstellung "Taschen auch in den Eckzellen"
+    const corner = !(st.g && st.g.corner === false);
+    boxes = st.boxes.map((b0) => {
+      const b = { ...defaultBox(), ...b0 }, s = b0.sides || {};
+      b.sides = {};
+      for (const k of SIDES) {
+        const mx = sideMax(b, k), v = s[k];
+        b.sides[k] = typeof v === 'number' ? v : v === false ? 0 : corner ? mx : Math.max(0, mx - 2);
+      }
+      return b;
+    });
     sel = Math.min(Math.max(0, st.sel | 0), boxes.length - 1);
     dimMode = st.mode === 'inner' ? 'inner' : 'outer';
     boxToFields();
@@ -1310,7 +1350,9 @@ renderForm();
     boxes = [defaultBox()]; sel = 0;
     dimMode = old.dim_mode === 'inner' ? 'inner' : 'outer';
     for (const id of ['size_w', 'size_d', 'size_h', 'lid_on', 'box_h']) writeField(BYID[id], old[id] ?? BYID[id].def);
-    fieldsToBox(); boxToFields();
+    fieldsToBox();
+    if (old.corner === false) boxes[0].sides = Object.fromEntries(SIDES.map((k) => [k, Math.max(0, sideMax(boxes[0], k) - 2)]));
+    boxToFields();
   } else {
     setGlobals({}); readGlobals();
     boxes = [defaultBox()]; sel = 0;
@@ -1321,6 +1363,12 @@ syncUI(); updateLayoutUI();
 
 const isBoxField = (el) => el && el.id && BYID[el.id] && BYID[el.id].g === 'box';
 document.getElementById('form').addEventListener('input', (ev) => {
+  const sd = ev.target.dataset && ev.target.dataset.side;
+  if (sd) {
+    const b = boxes[sel], v = parseInt(ev.target.value, 10);
+    b.sides[sd] = Number.isFinite(v) ? Math.max(0, Math.min(sideMax(b, sd), v)) : 0;
+    schedule(); return;
+  }
   if (isBoxField(ev.target)) { fieldsToBox(); }
   else {
     readGlobals();
@@ -1330,6 +1378,7 @@ document.getElementById('form').addEventListener('input', (ev) => {
   syncUI(); schedule();
 });
 document.getElementById('form').addEventListener('change', (ev) => {
+  if (ev.target.dataset && ev.target.dataset.side) ev.target.value = sideCount(boxes[sel], ev.target.dataset.side);
   if (isBoxField(ev.target) && dimMode === 'outer') boxToFields();
   updateLayoutUI(); schedule();
 });
@@ -1337,13 +1386,8 @@ document.getElementById('form').addEventListener('submit', (e) => e.preventDefau
 for (const b of document.querySelectorAll('#mode .chip')) b.addEventListener('click', () => setMode(b.dataset.mode));
 document.getElementById('boxlist').addEventListener('click', (e) => { const c = e.target.closest('[data-box]'); if (c) selectBox(+c.dataset.box); });
 document.getElementById('dock').addEventListener('click', (e) => { const c = e.target.closest('[data-dock]'); if (c && !c.disabled) dock(c.dataset.dock); });
-document.getElementById('sides').addEventListener('click', (e) => {
-  const c = e.target.closest('[data-side]'); if (!c) return;
-  const s = boxes[sel].sides; s[c.dataset.side] = !s[c.dataset.side];
-  updateLayoutUI(); schedule();
-});
 document.getElementById('autoSides').addEventListener('click', autoSides);
-document.getElementById('allSides').addEventListener('click', () => { for (const b of boxes) b.sides = allSides(); updateLayoutUI(); rebuild(); });
+document.getElementById('allSides').addEventListener('click', () => { for (const b of boxes) b.sides = allSides(b); updateLayoutUI(); rebuild(); });
 document.getElementById('delBox').addEventListener('click', removeBox);
 document.getElementById('reset').addEventListener('click', () => {
   setGlobals({}); readGlobals(); boxes = [defaultBox()]; sel = 0; dimMode = 'outer';
