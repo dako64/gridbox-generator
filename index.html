@@ -240,7 +240,8 @@ const PARAMS = [
   { g: 'Magnete', id: 'mag_d', label: 'Magnet-Durchmesser', def: 5, unit: 'mm', step: 0.5, min: 1 },
   { g: 'Magnete', id: 'mag_t', label: 'Magnet-Dicke', def: 1, unit: 'mm', step: 0.1, min: 0.3 },
   { g: 'Magnete', id: 'mag_clear', label: 'Spiel Magnet/Schlitz', def: 0.2, unit: 'mm', step: 0.05, min: 0, hint: 'gesamt, auf Durchmesser und Dicke' },
-  { g: 'Magnete', id: 'mag_skin', label: 'Außenhaut vor dem Magnet', def: 0.4, unit: 'mm', step: 0.05, min: 0.2, hint: 'dünner = stärkere Haftung' },
+  { g: 'Magnete', id: 'mag_out', label: 'Außenhaut vor dem Magnet', def: 0.8, unit: 'mm', step: 0.05, min: 0.3, hint: '2 Linien mit 0,4er Düse; dünner haftet stärker, kann aber Löcher geben' },
+  { g: 'Magnete', id: 'mag_back', label: 'Wand hinter dem Magnet', def: 0.8, unit: 'mm', step: 0.05, min: 0.3, hint: 'reicht die Wand nicht, kommt innen ein Polster dazu' },
   { g: 'Magnete', id: 'mag_z', label: 'Unterer Magnet über dem Boden', def: 1, unit: 'mm', step: 0.2, min: 0.4, hint: 'Unterkante des Schlitzes' },
   { g: 'Magnete', id: 'mag_cover', label: 'Material über dem oberen Magnet', def: 1, unit: 'mm', step: 0.2, min: 0.4, hint: 'bis zur Oberkante bzw. zum Falz' },
   { g: 'Key', id: 'key_short', label: 'Key kürzer als Tasche', def: 0.3, unit: 'mm', step: 0.1, min: 0 },
@@ -472,17 +473,24 @@ function derive(P) {
   D.pockets = D.pk.s + D.pk.n + D.pk.w + D.pk.e;
   // Magnetschlitze: unten ab mag_z, oben unter der Oberkante bzw. dem Falz (wenn Platz ist)
   D.slot = { u: P.mag_d + P.mag_clear, v: P.mag_t + P.mag_clear, h: P.mag_d + P.mag_clear };
-  D.mag_inner = P.wall - P.mag_skin - D.slot.v;
+  // Polster innen, wenn Außenhaut + Schlitz + Rückwand dicker sind als die Wand
+  D.pad = Math.max(0, P.mag_out + D.slot.v + P.mag_back - P.wall);
+  D.mag_inner = P.wall + D.pad - P.mag_out - D.slot.v;
   const wallTop = P.lid_on ? P.box_h - P.lip_h : P.box_h;
   D.magZ = [P.mag_z];
   const up0 = wallTop - P.mag_cover - D.slot.h;
   if (up0 >= P.mag_z + D.slot.h + 2) D.magZ.push(up0);
   // einzeln abwählbar: magOn[k][Ebene * 2 + Ende], Ende 0 = Zelle 0, Ende 1 = letzte Zelle
+  // Eckmagnete rücken so weit von der Ecke weg, dass zum Schlitz der Nachbarseite die Rückwand (mag_back) bleibt
+  D.magShift = Math.max(0, P.gap + P.mag_out + D.slot.v + P.mag_back + D.slot.u / 2 - P.raster / 2);
   D.magPos = {};
   for (const k of SIDES) {
     const on = (P.magOn && P.magOn[k]) || fullMagOn()[k];
     D.magPos[k] = [];
-    D.mags[k].forEach((c, end) => D.magZ.forEach((z, lvl) => { if (on[lvl * 2 + end]) D.magPos[k].push({ c, z, lvl }); }));
+    const two = D.mags[k].length === 2;
+    D.mags[k].forEach((c, end) => D.magZ.forEach((z, lvl) => {
+      if (on[lvl * 2 + end]) D.magPos[k].push({ c, z, lvl, du: two ? (end === 0 ? D.magShift : -D.magShift) : 0 });
+    }));
   }
   D.nMag = SIDES.reduce((a, k) => a + D.magPos[k].length, 0);
   const lv = new Set(SIDES.flatMap((k) => D.magPos[k].map((p) => p.lvl)));
@@ -523,10 +531,11 @@ function connections(items) {
     // Magnete: gleiche Zelle, unten immer gleiche Höhe, oben nur bei gleicher Schlitzhöhe
     pair.mags = 0;
     pair.mixed = !!A.P.mag[side] !== !!B.P.mag[opp];
-    const mb = B.D.magPos[opp].map((p) => ({ j: (vert ? b.y : b.x) + p.c, z: p.z }));
+    // Lage entlang der Kante in mm (Zelle + Verschiebung weg von der Ecke)
+    const mb = B.D.magPos[opp].map((p) => ({ u: ((vert ? b.y : b.x) + p.c) * r + p.du, z: p.z }));
     for (const p of A.D.magPos[side]) {
-      const j = (vert ? a.y : a.x) + p.c;
-      if (mb.some((q) => q.j === j && Math.abs(q.z - p.z) < 0.5)) pair.mags++;
+      const u = ((vert ? a.y : a.x) + p.c) * r + p.du;
+      if (mb.some((q) => Math.abs(q.u - u) < 0.5 && Math.abs(q.z - p.z) < 0.5)) pair.mags++;
     }
     // gemeinsame Kante (für die Markierung in der Ansicht), in mm
     if (vert) { const X = (side === 'e' ? b.x : a.x) * r; pair.edge = [[X, Math.max(a.y, b.y) * r], [X, Math.min(a.y + a.cd, b.y + b.cd) * r]]; }
@@ -636,12 +645,25 @@ function buildBox(P, D) {
   for (const i of D.cells.n) maps.push((u, v) => [c(i) + u, Dp - g - v]);
   for (const j of D.cells.w) maps.push((u, v) => [g + v, c(j) + u]);
   for (const j of D.cells.e) maps.push((u, v) => [W - g - v, c(j) + u]);
-  // geschlossene Schlitze für Magnete (werden in einer Druckpause eingelegt)
   const sideMap = sideMaps(P);
+  // Polster innen an jeder Magnetstelle, damit Außenhaut und Rückwand je 2 Linien dick sein können.
+  // Unten steht es auf dem Boden, oben bekommt es eine 45°-Schräge nach unten (druckbar ohne Stützen).
+  if (D.pad > 0.01) {
+    const pads = [], m = 1.0;
+    for (const k of SIDES) for (const { c: ci, z: z0, lvl, du } of D.magPos[k]) {
+      const su = D.slot.u / 2 + m, vi = wall - 0.05, vo = wall + D.pad;
+      const face = (v1) => [[-su, vi], [su, vi], [su, v1], [-su, v1]].map(([u, v]) => sideMap[k](ci, u + du, v));
+      const zt = Math.min(z0 + D.slot.h + m, H - 0.2);
+      if (lvl === 0) pads.push(hull(at(face(vo), Math.max(0.2, P.floor_t - 0.5)), at(face(vo), zt)));
+      else { const zb = z0 - m; pads.push(hull(at(face(wall + 0.01), zb - D.pad), at(face(vo), zb), at(face(vo), zt))); }
+    }
+    body = tk(M.union([body, ...pads]));
+  }
+  // geschlossene Schlitze für Magnete (werden in einer Druckpause eingelegt)
   const slots = [];
-  for (const k of SIDES) for (const { c: ci, z: z0 } of D.magPos[k]) {
-    const su = D.slot.u / 2, v0 = P.mag_skin, v1 = P.mag_skin + D.slot.v;
-    const poly = [[-su, v0], [su, v0], [su, v1], [-su, v1]].map(([u, v]) => sideMap[k](ci, u, v));
+  for (const k of SIDES) for (const { c: ci, z: z0, du } of D.magPos[k]) {
+    const su = D.slot.u / 2, v0 = P.mag_out, v1 = P.mag_out + D.slot.v;
+    const poly = [[-su, v0], [su, v0], [su, v1], [-su, v1]].map(([u, v]) => sideMap[k](ci, u + du, v));
     slots.push(hull(at(poly, z0), at(poly, z0 + D.slot.h)));
   }
   if (slots.length) body = sub(body, uni(slots));
@@ -744,7 +766,7 @@ function buildAll() {
   const { keys, pairs } = connections(items);
   try {
     for (const { b, i, P, D } of items) {
-      const sk = SIDES.map((k) => D.cells[k].join('.') + 'm' + D.magPos[k].map((p) => p.c + '@' + p.z).join('.')).join('/') + '|' + D.magZ.join(',');
+      const sk = SIDES.map((k) => D.cells[k].join('.') + 'm' + D.magPos[k].map((p) => p.c + '@' + p.z + '~' + p.du).join('.')).join('/') + '|' + D.magZ.join(',');
       const bm = cached(`${gk}|box|${P.box_w}|${P.box_d}|${P.box_h}|${P.lid_on}|${sk}`, () => meshOf(buildBox(P, D)));
       parts.push({ name: `Box ${i + 1}`, kind: 'box', box: i, mesh: bm, place: [b.x * r, b.y * r, 0], print: 'asis' });
       if (P.lid_on) {
@@ -793,12 +815,12 @@ function buildAll() {
 // Magnete als Scheiben, außen knapp auf der Wandfläche, damit man sie sieht
 function magnetMarks(P, D) {
   const sm = sideMaps(P), R = P.mag_d / 2, N = 20, pos = [], idx = [];
-  for (const k of SIDES) for (const { c: ci, z: z0 } of D.magPos[k]) {
+  for (const k of SIDES) for (const { c: ci, z: z0, du } of D.magPos[k]) {
     const zc = z0 + D.slot.h / 2, o = pos.length / 3;
     for (const v of [-0.03, 0.3]) {
-      const [cx, cy] = sm[k](ci, 0, v); pos.push(cx, cy, zc);
+      const [cx, cy] = sm[k](ci, du, v); pos.push(cx, cy, zc);
       for (let i = 0; i < N; i++) {
-        const a = (i / N) * Math.PI * 2, [x, y] = sm[k](ci, R * Math.cos(a), v);
+        const a = (i / N) * Math.PI * 2, [x, y] = sm[k](ci, du + R * Math.cos(a), v);
         pos.push(x, y, zc + R * Math.sin(a));
       }
     }
@@ -1246,7 +1268,9 @@ function report() {
     const pz = [...new Set(magItems.flatMap((x) => x.D.pauseZ.map((z) => Math.round(z * 100) / 100)))].sort((a, b) => a - b);
     m.push(['ok', `Magnete einlegen: Druckpause in der ersten Schicht über ${pz.map((z) => nf(z) + ' mm').join(', ')} (Oberkante der Schlitze). Polung: rechts und hinten Nordpol nach außen, links und vorne Südpol nach außen. So ziehen sich angedockte Boxen immer an, egal welche. Polung vor dem Einlegen mit einem Testmagneten prüfen.`]);
     const mi = magItems[0].D.mag_inner;
-    if (mi < 0.4 - 1e-9) m.push(['bad', `Hinter den Magneten bleiben nur ${nf(mi)} mm Wand. Wand dicker, Außenhaut dünner oder weniger Spiel.`]);
+    if (mi < 0.8 - 1e-9) m.push(['warn', `Hinter den Magneten bleiben nur ${nf(mi)} mm Wand, weniger als 2 Linien mit 0,4er Düse.`]);
+    if (G.mag_out < 0.8 - 1e-9) m.push(['warn', `Außenhaut vor den Magneten nur ${nf(G.mag_out)} mm. Unter 2 Linien lassen manche Slicer dort Lücken.`]);
+    if (magItems[0].D.pad > 0.01) m.push(['ok', `An jeder Magnetstelle ist die Wand innen um ${nf(magItems[0].D.pad)} mm verdickt (Polster), damit vor und hinter dem Magneten je ${nf(G.mag_out)} / ${nf(G.mag_back)} mm Material bleiben.`]);
     if (magItems.some((x) => x.D.magZ.length < 2)) m.push(['warn', `Box ${magItems.filter((x) => x.D.magZ.length < 2).map((x) => x.i + 1).join(', ')}: zu niedrig für die oberen Magnete, dort sitzen nur die unteren.`]);
   }
   for (let a = 0; a < boxes.length; a++) for (let b = a + 1; b < boxes.length; b++)
