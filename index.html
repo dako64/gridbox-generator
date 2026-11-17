@@ -63,9 +63,17 @@ header p { margin: 0; color: var(--muted); }
 .tools { display: flex; flex-wrap: wrap; gap: 6px; }
 .sidegrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .sidef { display: grid; gap: 4px; font-size: 13px; min-width: 0; }
-.sidef small { color: var(--muted); font: 11px var(--f-mono); }
+.sidegrid { align-items: start; }
+.sidef small { display: block; color: var(--muted); font: 11px var(--f-mono); white-space: nowrap; }
 .chip.mini { font: 500 11px var(--f-body); padding: 3px 6px; text-align: center; }
 .sidef input:disabled { opacity: 0.35; }
+/* Magnetwahl: eine kleine Wandansicht, vier Punkte an den Ecken */
+.magpick { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 0; justify-items: center; padding: 6px 4px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--chip); }
+.magpick[hidden] { display: none; }
+.mp { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--muted); background: transparent; cursor: pointer; padding: 0; }
+.mp[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); }
+.mp:disabled { opacity: 0.25; cursor: default; }
 @media (max-width: 400px) { .sidegrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 details { border-top: 1px solid var(--line); }
 details > summary { padding: 12px 16px; cursor: pointer; list-style: none; display: flex; justify-content: space-between; }
@@ -143,12 +151,12 @@ details .sec { border-top: 0; padding-top: 0; }
             <button type="button" class="chip" data-mode="inner">Innen</button>
           </div></div>
         <div id="boxfields"></div>
-        <div class="block"><span>Verbindung pro Seite<span class="hint">Zahl = Bowtie-Taschen, 0 = glatte Seite. Bei weniger als allen bleiben zuerst die Eckzellen frei. „Magnete“: statt Taschen je 2 Magnete unten und oben in den Eckzellen, eingelegt in einer Druckpause.</span></span>
+        <div class="block"><span>Verbindung pro Seite<span class="hint">Zahl = Bowtie-Taschen, 0 = glatte Seite. Bei weniger als allen bleiben zuerst die Eckzellen frei. „Magnete“: statt Taschen bis zu 4 Magnete in den Ecken der Seite, eingelegt in einer Druckpause. Die Punkte zeigen die Seite von außen, ein Klick schaltet einen Magnet an oder ab.</span></span>
           <div class="sidegrid" id="sides">
-            <div class="sidef"><label for="pk_s">Vorne <small id="pkmax_s"></small></label><div class="num"><input type="number" id="pk_s" data-side="s" min="0" step="1" inputmode="numeric"></div><button type="button" class="chip mini" data-mag="s" aria-pressed="false">Magnete</button></div>
-            <div class="sidef"><label for="pk_n">Hinten <small id="pkmax_n"></small></label><div class="num"><input type="number" id="pk_n" data-side="n" min="0" step="1" inputmode="numeric"></div><button type="button" class="chip mini" data-mag="n" aria-pressed="false">Magnete</button></div>
-            <div class="sidef"><label for="pk_w">Links <small id="pkmax_w"></small></label><div class="num"><input type="number" id="pk_w" data-side="w" min="0" step="1" inputmode="numeric"></div><button type="button" class="chip mini" data-mag="w" aria-pressed="false">Magnete</button></div>
-            <div class="sidef"><label for="pk_e">Rechts <small id="pkmax_e"></small></label><div class="num"><input type="number" id="pk_e" data-side="e" min="0" step="1" inputmode="numeric"></div><button type="button" class="chip mini" data-mag="e" aria-pressed="false">Magnete</button></div>
+            <div class="sidef"><label for="pk_s">Vorne <small id="pkmax_s"></small></label><div class="num"><input type="number" id="pk_s" data-side="s" min="0" step="1" inputmode="numeric"></div><button type="button" class="chip mini" data-mag="s" aria-pressed="false">Magnete</button><div class="magpick" id="mp_s" hidden><button type="button" class="mp" data-mp="s:1:0" aria-pressed="true" title="oben links (von außen gesehen)" aria-label="Magnet oben links"></button> <button type="button" class="mp" data-mp="s:1:1" aria-pressed="true" title="oben rechts (von außen gesehen)" aria-label="Magnet oben rechts"></button> <button type="button" class="mp" data-mp="s:0:0" aria-pressed="true" title="unten links (von außen gesehen)" aria-label="Magnet unten links"></button> <button type="button" class="mp" data-mp="s:0:1" aria-pressed="true" title="unten rechts (von außen gesehen)" aria-label="Magnet unten rechts"></button></div></div>
+            <div class="sidef"><label for="pk_n">Hinten <small id="pkmax_n"></small></label><div class="num"><input type="number" id="pk_n" data-side="n" min="0" step="1" inputmode="numeric"></div><button type="button" class="chip mini" data-mag="n" aria-pressed="false">Magnete</button><div class="magpick" id="mp_n" hidden><button type="button" class="mp" data-mp="n:1:0" aria-pressed="true" title="oben links (von außen gesehen)" aria-label="Magnet oben links"></button> <button type="button" class="mp" data-mp="n:1:1" aria-pressed="true" title="oben rechts (von außen gesehen)" aria-label="Magnet oben rechts"></button> <button type="button" class="mp" data-mp="n:0:0" aria-pressed="true" title="unten links (von außen gesehen)" aria-label="Magnet unten links"></button> <button type="button" class="mp" data-mp="n:0:1" aria-pressed="true" title="unten rechts (von außen gesehen)" aria-label="Magnet unten rechts"></button></div></div>
+            <div class="sidef"><label for="pk_w">Links <small id="pkmax_w"></small></label><div class="num"><input type="number" id="pk_w" data-side="w" min="0" step="1" inputmode="numeric"></div><button type="button" class="chip mini" data-mag="w" aria-pressed="false">Magnete</button><div class="magpick" id="mp_w" hidden><button type="button" class="mp" data-mp="w:1:0" aria-pressed="true" title="oben links (von außen gesehen)" aria-label="Magnet oben links"></button> <button type="button" class="mp" data-mp="w:1:1" aria-pressed="true" title="oben rechts (von außen gesehen)" aria-label="Magnet oben rechts"></button> <button type="button" class="mp" data-mp="w:0:0" aria-pressed="true" title="unten links (von außen gesehen)" aria-label="Magnet unten links"></button> <button type="button" class="mp" data-mp="w:0:1" aria-pressed="true" title="unten rechts (von außen gesehen)" aria-label="Magnet unten rechts"></button></div></div>
+            <div class="sidef"><label for="pk_e">Rechts <small id="pkmax_e"></small></label><div class="num"><input type="number" id="pk_e" data-side="e" min="0" step="1" inputmode="numeric"></div><button type="button" class="chip mini" data-mag="e" aria-pressed="false">Magnete</button><div class="magpick" id="mp_e" hidden><button type="button" class="mp" data-mp="e:1:0" aria-pressed="true" title="oben links (von außen gesehen)" aria-label="Magnet oben links"></button> <button type="button" class="mp" data-mp="e:1:1" aria-pressed="true" title="oben rechts (von außen gesehen)" aria-label="Magnet oben rechts"></button> <button type="button" class="mp" data-mp="e:0:0" aria-pressed="true" title="unten links (von außen gesehen)" aria-label="Magnet unten links"></button> <button type="button" class="mp" data-mp="e:0:1" aria-pressed="true" title="unten rechts (von außen gesehen)" aria-label="Magnet unten rechts"></button></div></div>
           </div></div>
       </div>
       <div class="sec">
@@ -295,7 +303,7 @@ function defaultBox() {
   const r = BYID.raster.def;
   const b = { x: 0, y: 0, cw: Math.round(BYID.size_w.def / r), cd: Math.round(BYID.size_d.def / r),
     h: BYID.size_h.def, bh: BYID.box_h.def, lid: BYID.lid_on.def, req: null };
-  b.sides = allSides(b); b.mag = noMag();
+  b.sides = allSides(b); b.mag = noMag(); b.magOn = fullMagOn();
   return b;
 }
 // Seite mit Magneten statt Taschen
@@ -303,7 +311,10 @@ const noMag = () => ({ s: false, n: false, w: false, e: false });
 const OPP = { e: 'w', w: 'e', n: 's', s: 'n' };
 // Magnete sitzen in den beiden Eckzellen einer Seite
 const magCells = (m) => (m >= 2 ? [0, m - 1] : m === 1 ? [0] : []);
-const cloneBox = (b) => ({ ...b, sides: { ...b.sides }, mag: { ...(b.mag || noMag()) }, req: b.req ? { ...b.req } : null });
+const fullMagOn = () => ({ s: [1, 1, 1, 1], n: [1, 1, 1, 1], w: [1, 1, 1, 1], e: [1, 1, 1, 1] });
+// von außen auf die Seite geschaut: welches Ende (Zelle 0 oder letzte) ist links?
+const leftEnd = (k) => (k === 's' || k === 'e' ? 0 : 1);
+const cloneBox = (b) => ({ ...b, sides: { ...b.sides }, mag: { ...(b.mag || noMag()) }, magOn: JSON.parse(JSON.stringify(b.magOn || fullMagOn())), req: b.req ? { ...b.req } : null });
 
 const span = (p, l, q, m) => Math.min(p + l, q + m) - Math.max(p, q);
 const overlaps = (a, b) => span(a.x, a.cw, b.x, b.cw) > 0 && span(a.y, a.cd, b.y, b.cd) > 0;
@@ -316,7 +327,7 @@ function touchSide(a, b) {
 }
 function dockRect(i, side) {
   const b = boxes[i]; if (!b) return null;
-  const n = cloneBox(b); n.sides = allSides(n); n.mag = noMag();
+  const n = cloneBox(b); n.sides = allSides(n); n.mag = noMag(); n.magOn = fullMagOn();
   n.mag[OPP[side]] = !!(b.mag && b.mag[side]);   // gleiche Verbindungsart wie die Seite, an die angedockt wird
   if (side === 'e') n.x = b.x + b.cw; else if (side === 'w') n.x = b.x - b.cw;
   else if (side === 'n') n.y = b.y + b.cd; else n.y = b.y - b.cd;
@@ -421,7 +432,7 @@ function boxToFields() {
 }
 
 function boxParams(b) {
-  const P = { ...G, box_w: b.cw * G.raster, box_d: b.cd * G.raster, total_h: effH(b), box_h: b.bh, lid_on: b.lid, sides: b.sides, mag: b.mag || noMag(), req: b.req };
+  const P = { ...G, box_w: b.cw * G.raster, box_d: b.cd * G.raster, total_h: effH(b), box_h: b.bh, lid_on: b.lid, sides: b.sides, mag: b.mag || noMag(), magOn: b.magOn || fullMagOn(), req: b.req };
   P.box_h_req = P.box_h;
   if (!P.lid_on) P.box_h = P.total_h;
   else {
@@ -466,8 +477,16 @@ function derive(P) {
   D.magZ = [P.mag_z];
   const up0 = wallTop - P.mag_cover - D.slot.h;
   if (up0 >= P.mag_z + D.slot.h + 2) D.magZ.push(up0);
-  D.nMag = SIDES.reduce((a, k) => a + D.mags[k].length, 0) * D.magZ.length;
-  D.pauseZ = D.nMag ? D.magZ.map((z) => z + D.slot.h) : [];
+  // einzeln abwählbar: magOn[k][Ebene * 2 + Ende], Ende 0 = Zelle 0, Ende 1 = letzte Zelle
+  D.magPos = {};
+  for (const k of SIDES) {
+    const on = (P.magOn && P.magOn[k]) || fullMagOn()[k];
+    D.magPos[k] = [];
+    D.mags[k].forEach((c, end) => D.magZ.forEach((z, lvl) => { if (on[lvl * 2 + end]) D.magPos[k].push({ c, z, lvl }); }));
+  }
+  D.nMag = SIDES.reduce((a, k) => a + D.magPos[k].length, 0);
+  const lv = new Set(SIDES.flatMap((k) => D.magPos[k].map((p) => p.lvl)));
+  D.pauseZ = D.magZ.filter((z, i) => lv.has(i)).map((z) => z + D.slot.h);
   // Ecken, an denen auf beiden Seiten eine Tasche sitzt (dort bleibt nur ein dünner Steg)
   const has = (k, c) => D.cells[k].includes(c);
   D.corners = [has('s', 0) && has('w', 0), has('s', D.cw - 1) && has('e', 0),
@@ -504,10 +523,10 @@ function connections(items) {
     // Magnete: gleiche Zelle, unten immer gleiche Höhe, oben nur bei gleicher Schlitzhöhe
     pair.mags = 0;
     pair.mixed = !!A.P.mag[side] !== !!B.P.mag[opp];
-    const mb = new Set(B.D.mags[opp].map((c) => (vert ? b.y : b.x) + c));
-    for (const c of A.D.mags[side]) {
-      if (!mb.has((vert ? a.y : a.x) + c)) continue;
-      pair.mags += A.D.magZ.filter((z) => B.D.magZ.some((z2) => Math.abs(z - z2) < 0.5)).length;
+    const mb = B.D.magPos[opp].map((p) => ({ j: (vert ? b.y : b.x) + p.c, z: p.z }));
+    for (const p of A.D.magPos[side]) {
+      const j = (vert ? a.y : a.x) + p.c;
+      if (mb.some((q) => q.j === j && Math.abs(q.z - p.z) < 0.5)) pair.mags++;
     }
     // gemeinsame Kante (für die Markierung in der Ansicht), in mm
     if (vert) { const X = (side === 'e' ? b.x : a.x) * r; pair.edge = [[X, Math.max(a.y, b.y) * r], [X, Math.min(a.y + a.cd, b.y + b.cd) * r]]; }
@@ -620,7 +639,7 @@ function buildBox(P, D) {
   // geschlossene Schlitze für Magnete (werden in einer Druckpause eingelegt)
   const sideMap = sideMaps(P);
   const slots = [];
-  for (const k of SIDES) for (const ci of D.mags[k]) for (const z0 of D.magZ) {
+  for (const k of SIDES) for (const { c: ci, z: z0 } of D.magPos[k]) {
     const su = D.slot.u / 2, v0 = P.mag_skin, v1 = P.mag_skin + D.slot.v;
     const poly = [[-su, v0], [su, v0], [su, v1], [-su, v1]].map(([u, v]) => sideMap[k](ci, u, v));
     slots.push(hull(at(poly, z0), at(poly, z0 + D.slot.h)));
@@ -725,7 +744,7 @@ function buildAll() {
   const { keys, pairs } = connections(items);
   try {
     for (const { b, i, P, D } of items) {
-      const sk = SIDES.map((k) => D.cells[k].join('.') + 'm' + D.mags[k].join('.')).join('/') + '|' + D.magZ.join(',');
+      const sk = SIDES.map((k) => D.cells[k].join('.') + 'm' + D.magPos[k].map((p) => p.c + '@' + p.z).join('.')).join('/') + '|' + D.magZ.join(',');
       const bm = cached(`${gk}|box|${P.box_w}|${P.box_d}|${P.box_h}|${P.lid_on}|${sk}`, () => meshOf(buildBox(P, D)));
       parts.push({ name: `Box ${i + 1}`, kind: 'box', box: i, mesh: bm, place: [b.x * r, b.y * r, 0], print: 'asis' });
       if (P.lid_on) {
@@ -774,7 +793,7 @@ function buildAll() {
 // Magnete als Scheiben, außen knapp auf der Wandfläche, damit man sie sieht
 function magnetMarks(P, D) {
   const sm = sideMaps(P), R = P.mag_d / 2, N = 20, pos = [], idx = [];
-  for (const k of SIDES) for (const ci of D.mags[k]) for (const z0 of D.magZ) {
+  for (const k of SIDES) for (const { c: ci, z: z0 } of D.magPos[k]) {
     const zc = z0 + D.slot.h / 2, o = pos.length / 3;
     for (const v of [-0.03, 0.3]) {
       const [cx, cy] = sm[k](ci, 0, v); pos.push(cx, cy, zc);
@@ -1154,12 +1173,22 @@ function updateLayoutUI() {
 }
 function syncSideFields() {
   const b = boxes[sel];
+  const levels = G.raster ? derive(boxParams(b)).magZ.length : 2;   // 1, wenn die Box für die obere Reihe zu niedrig ist
   for (const k of SIDES) {
     const el = document.getElementById('pk_' + k), mx = sideMax(b, k);
     const mag = !!(b.mag && b.mag[k]);
     el.max = mx; el.disabled = mag;
     if (document.activeElement !== el) el.value = sideCount(b, k);
-    document.getElementById('pkmax_' + k).textContent = mag ? `${magCells(mx).length * 2} Magn.` : `von ${mx}`;
+    const on = (b.magOn && b.magOn[k]) || [1, 1, 1, 1], ends = magCells(mx).length, lvls = levels;
+    const nOn = [0, 1].reduce((a, lvl) => a + (lvl < lvls ? [0, 1].filter((e) => e < ends && on[lvl * 2 + e]).length : 0), 0);
+    document.getElementById('pkmax_' + k).textContent = mag ? `${nOn} Magn.` : `von ${mx}`;
+    document.getElementById('mp_' + k).hidden = !mag;
+    for (const btn of document.querySelectorAll(`#mp_${k} .mp`)) {
+      const [, lvl, view] = btn.dataset.mp.split(':').map((x, i) => (i ? +x : x));
+      const end = view === 0 ? leftEnd(k) : 1 - leftEnd(k);
+      btn.disabled = end >= ends || lvl >= lvls;
+      btn.setAttribute('aria-pressed', String(!!on[lvl * 2 + end] && !btn.disabled));
+    }
     document.querySelector(`[data-mag="${k}"]`).setAttribute('aria-pressed', String(mag));
   }
 }
@@ -1510,6 +1539,7 @@ renderForm();
       // vor Version 4 war ohne Deckel die Gesamthöhe h maßgeblich
       if (!(st.ver >= 4) && !b.lid) b.bh = b.h;
       b.mag = { ...noMag(), ...(b0.mag || {}) };
+      b.magOn = { ...fullMagOn(), ...(b0.magOn || {}) };
       return b;
       return b;
     });
@@ -1561,6 +1591,14 @@ document.getElementById('dock').addEventListener('click', (e) => { const c = e.t
 document.getElementById('autoSides').addEventListener('click', autoSides);
 document.getElementById('allSides').addEventListener('click', () => { for (const b of boxes) { b.sides = allSides(b); b.mag = noMag(); } updateLayoutUI(); rebuild(); });
 document.getElementById('sides').addEventListener('click', (e) => {
+  const mp = e.target.closest('[data-mp]');
+  if (mp) {
+    const [k, lvl, view] = mp.dataset.mp.split(':').map((x, i) => (i ? +x : x));
+    const b = boxes[sel], end = view === 0 ? leftEnd(k) : 1 - leftEnd(k);
+    if (!b.magOn) b.magOn = fullMagOn();
+    b.magOn[k][lvl * 2 + end] = b.magOn[k][lvl * 2 + end] ? 0 : 1;
+    updateLayoutUI(); schedule(); return;
+  }
   const c = e.target.closest('[data-mag]'); if (!c) return;
   const b = boxes[sel], k = c.dataset.mag;
   b.mag[k] = !b.mag[k];
